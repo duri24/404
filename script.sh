@@ -27,3 +27,21 @@ if [ $? -ne 0 ]; then
     rm -rf "$TEMP_DIR"
     exit 1
 fi
+
+# Crear carpeta de destino
+mkdir -p "$DEST_DIR"
+echo "Organizando archivos por extensión..."
+
+# Mover los archivos extraídos del ZIP a subcarpetas según su extensión
+find "$TEMP_DIR" -type f | while read -r filepath; do
+    filename=$(basename "$filepath")
+    
+    if [[ "$filename" == *.* ]]; then
+        ext="${filename##*.}"
+    else
+        ext="sin_extension"
+    fi
+
+    mkdir -p "$DEST_DIR/$ext"
+    cp "$filepath" "$DEST_DIR/$ext/"
+done
