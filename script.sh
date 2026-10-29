@@ -32,8 +32,9 @@ fi
 mkdir -p "$DEST_DIR"
 echo "Organizando archivos por extensión..."
 
-# Mover los archivos extraídos del ZIP a subcarpetas según su extensión
-find "$TEMP_DIR" -type f | while read -r filepath; do
+
+# Mover los archivos, ignorando la basura de macOS
+find "$TEMP_DIR" -type f -not -path "*/__MACOSX/*" -not -name "._*" -not -name ".DS_Store" | while read -r filepath; do
     filename=$(basename "$filepath")
     
     if [[ "$filename" == *.* ]]; then
@@ -43,7 +44,7 @@ find "$TEMP_DIR" -type f | while read -r filepath; do
     fi
 
     mkdir -p "$DEST_DIR/$ext"
-    cp "$filepath" "$DEST_DIR/$ext/"
+    mv "$filepath" "$DEST_DIR/$ext/"
 done
 
 echo ""
