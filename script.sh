@@ -110,4 +110,14 @@ echo "  - Archivos organizados:            $total_files"
 echo "  - Basura de macOS ignorada:        $ignorados"
 echo "  - Nombres duplicados renombrados:  $duplicados"
 echo "  - Archivos .py analizados:         $total_py"
-echo "  - Archivos .py que usan
+echo "  - Archivos .py que usan PySide6:   $count_pyside"
+echo ""
+echo "Archivos por extensión:"
+for d in "$DEST_DIR"/*/; do
+    [ -d "$d" ] || continue
+    cantidad=$(find "$d" -type f | wc -l | tr -d ' ')
+    echo "  $(basename "$d"): $cantidad"
+done
+
+echo ""
+echo "Proceso finalizado con éxito."
