@@ -1,6 +1,9 @@
 #!/bin/bash
+# Uso: ./script.sh <archivo.zip> <directorio_destino>
+# Descomprime un ZIP, clasifica los archivos por extensión y audita
+# el uso de PySide6 en los .py. Compatible con bash 3.2 (macOS) y Linux.
 
-# Validar que se reciban 2 parámetros
+# ---------- FASE 1: Validación de entradas ----------
 if [ "$#" -ne 2 ]; then
     echo "Error: Argumentos insuficientes."
     echo "Uso: $0 <archivo.zip> <directorio_destino>"
@@ -10,66 +13,84 @@ fi
 ZIP_FILE="$1"
 DEST_DIR="$2"
 
-# Verificar si el archivo ZIP existe
 if [ ! -f "$ZIP_FILE" ]; then
     echo "Error: El archivo '$ZIP_FILE' no existe."
     exit 1
 fi
 
-# Crear directorio temporal para la extracción
-TEMP_DIR=$(mktemp -d /tmp/unzip_tmp.XXXXXX)
-
-echo "Descomprimiendo '$ZIP_FILE'..."
-unzip -q "$ZIP_FILE" -d "$TEMP_DIR"
-
-if [ $? -ne 0 ]; then
-    echo "Error al descomprimir el archivo ZIP."
-    rm -rf "$TEMP_DIR"
+if ! command -v unzip >/dev/null 2>&1; then
+    echo "Error: 'unzip' no está instalado."
     exit 1
 fi
 
-# Crear carpeta de destino
+# ---------- FASE 2: Extracción en entorno efímero ----------
+TEMP_DIR=$(mktemp -d /tmp/unzip_tmp.XXXXXX) || { echo "Error al crear directorio temporal."; exit 1; }
+# El trap garantiza la limpieza en cualquier salida (éxito, error o Ctrl+C)
+trap 'rm -rf "$TEMP_DIR"' EXIT
+
+echo "Descomprimiendo '$ZIP_FILE'..."
+if ! unzip -q "$ZIP_FILE" -d "$TEMP_DIR"; then
+    echo "Error al descomprimir el archivo ZIP."
+    exit 1
+fi
+
 mkdir -p "$DEST_DIR"
+
+# Métrica "antes": basura de macOS presente en el ZIP
+ignorados=$(find "$TEMP_DIR" -type f \( -path "*/__MACOSX/*" -o -name "._*" -o -name ".DS_Store" \) | wc -l | tr -d ' ')
+
+# ---------- FASE 3: Clasificación dinámica por extensión ----------
 echo "Organizando archivos por extensión..."
+total_files=0
+duplicados=0
 
-
-# Mover los archivos, ignorando la basura de macOS
-find "$TEMP_DIR" -type f -not -path "*/__MACOSX/*" -not -name "._*" -not -name ".DS_Store" | while read -r filepath; do
+while IFS= read -r filepath; do
     filename=$(basename "$filepath")
-    
-    if [[ "$filename" == *.* ]]; then
-        ext="${filename##*.}"
+
+    # Se quita el punto inicial para que ".gitignore" no se vuelva extensión "gitignore"
+    nombre="${filename#.}"
+    if [[ "$nombre" == *.* && -n "${nombre##*.}" ]]; then
+        ext=$(printf '%s' "${nombre##*.}" | tr '[:upper:]' '[:lower:]')   # .PY y .py -> py
     else
         ext="sin_extension"
     fi
 
     mkdir -p "$DEST_DIR/$ext"
-    mv "$filepath" "$DEST_DIR/$ext/"
-done
+    destino="$DEST_DIR/$ext/$filename"
 
+    # Evita sobrescribir en silencio archivos con el mismo nombre
+    n=1
+    while [ -e "$destino" ]; do
+        destino="$DEST_DIR/$ext/${n}_$filename"
+        n=$((n + 1))
+        duplicados=$((duplicados + 1))
+    done
+
+    mv "$filepath" "$destino"
+    total_files=$((total_files + 1))
+done < <(find "$TEMP_DIR" -type f -not -path "*/__MACOSX/*" -not -name "._*" -not -name ".DS_Store")
+
+# ---------- FASE 4: Auditoría de dependencias ----------
 echo ""
 echo "=========================================="
 echo " AUDITORÍA DE DEPENDENCIAS (PySide6) "
 echo "=========================================="
 
 PY_DIR="$DEST_DIR/py"
+total_py=0
+count_pyside=0
 
 if [ -d "$PY_DIR" ]; then
-    total_py=0
-    count_pyside=0
-
-    # Analizar solo los archivos .py extraídos del ZIP
-    while read -r py_file; do
-        [ -e "$py_file" ] || continue
+    while IFS= read -r py_file; do
         total_py=$((total_py + 1))
         file_name=$(basename "$py_file")
-        
-        # Buscar el texto exacto de PySide6 mostrando el número de línea (-n)
-        matches=$(grep -n -E "import PySide6|from PySide6" "$py_file")
+
+        # Solo importaciones reales (no comentarios), con número de línea (-n)
+        matches=$(grep -n -E "^[[:space:]]*(import|from)[[:space:]]+PySide6" "$py_file")
 
         if [ -n "$matches" ]; then
             echo "[COINCIDENCIA] Archivo: $file_name"
-            echo "$matches" | while read -r line; do
+            echo "$matches" | while IFS= read -r line; do
                 echo "  -> Línea $line"
             done
             count_pyside=$((count_pyside + 1))
@@ -77,17 +98,16 @@ if [ -d "$PY_DIR" ]; then
             echo "[OK] Archivo: $file_name - Sin coincidencia."
         fi
         echo "------------------------------------------"
-    done < <(find "$PY_DIR" -type f -name "*.py")
-
-    echo ""
-    echo "Resumen de Auditoría:"
-    echo "  - Total de archivos .py analizados: $total_py"
-    echo "  - Archivos que usan PySide6: $count_pyside"
+    done < <(find "$PY_DIR" -type f -iname "*.py")
 else
     echo "No se encontraron archivos .py en el ZIP para auditar."
 fi
 
-# Eliminar carpeta temporal del unzipper
-rm -rf "$TEMP_DIR"
+# ---------- Resumen ----------
 echo ""
-echo "Proceso finalizado con éxito."
+echo "Resumen:"
+echo "  - Archivos organizados:            $total_files"
+echo "  - Basura de macOS ignorada:        $ignorados"
+echo "  - Nombres duplicados renombrados:  $duplicados"
+echo "  - Archivos .py analizados:         $total_py"
+echo "  - Archivos .py que usan
