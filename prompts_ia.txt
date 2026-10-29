@@ -1,0 +1,2 @@
+PROMPT UTILIZADO:
+Escribe un script en Bash para macOS que reciba un .zip y un directorio destino. Debe descomprimir con 'unzip', organizar por extensiones con 'mkdir' y 'find', y auditar los archivos .py buscando 'PySide6' con 'grep -n', mostrando el número de línea y un resumen final.
